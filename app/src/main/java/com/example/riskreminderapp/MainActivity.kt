@@ -36,6 +36,8 @@ class MainActivity : ComponentActivity() {
 
     private var onPermissionsDeniedPermanently: (() -> Unit)? = null
 
+    private var isNotificationPermissionPermanentlyDenied = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -44,7 +46,7 @@ class MainActivity : ComponentActivity() {
             ActivityResultContracts.RequestMultiplePermissions()
         ) { permissions ->
             val permanentlyDenied = permissions.filterValues { !it }.keys.any { permission ->
-                ActivityCompat.shouldShowRequestPermissionRationale(this, permission).not()
+                !ActivityCompat.shouldShowRequestPermissionRationale(this, permission)
             }
 
             if (permanentlyDenied) {
@@ -62,17 +64,49 @@ class MainActivity : ComponentActivity() {
         notificationPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestPermission()
         ) { isGranted ->
-            val msg = if (isGranted) "Notification permission granted"
-            else "Notification permission denied"
-            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+            if (isGranted) {
+                Toast.makeText(this, "Notification permission granted", Toast.LENGTH_SHORT).show()
+            } else {
+                val shouldShow = ActivityCompat.shouldShowRequestPermissionRationale(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                )
+                if (!shouldShow && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    isNotificationPermissionPermanentlyDenied = true
+                }
+                Toast.makeText(this, "Notification permission denied", Toast.LENGTH_SHORT).show()
+            }
         }
-
-        requestNotificationPermission()
-        schedulePasswordReminder()
 
         setContent {
             var showSettingsDialog by remember { mutableStateOf(false) }
             val context = LocalContext.current
+
+            LaunchedEffect(Unit) {
+                // Ask for Notification permission if not already granted
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val granted = ContextCompat.checkSelfPermission(
+                        this@MainActivity,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) == PackageManager.PERMISSION_GRANTED
+
+                    if (!granted) {
+                        val shouldShow = ActivityCompat.shouldShowRequestPermissionRationale(
+                            this@MainActivity,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        )
+                        if (shouldShow) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            // if permanently denied, show settings dialog
+                            showSettingsDialog = true
+                        }
+                    }
+                }
+
+                schedulePasswordReminder()
+                scheduleSecurityTipsReminder()
+            }
 
             if (showSettingsDialog) {
                 AskSettingsDialog(
@@ -110,22 +144,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
-    }
-
     private fun schedulePasswordReminder() {
         val workRequest = PeriodicWorkRequestBuilder<PasswordReminderWorker>(
             7, TimeUnit.DAYS
         ).build()
 
         WorkManager.getInstance(this).enqueue(workRequest)
+    }
+
+    private fun scheduleSecurityTipsReminder() {
+        val tipRequest = PeriodicWorkRequestBuilder<SecurityTipWorker>(
+            12, TimeUnit.HOURS
+        ).build()
+
+        WorkManager.getInstance(this).enqueue(tipRequest)
     }
 
     private fun checkAndRequestCameraAndMicPermissions(onPermanentlyDenied: () -> Unit) {
@@ -224,7 +256,7 @@ fun AskSettingsDialog(
         },
         title = { Text("Permission Required") },
         text = {
-            Text("You’ve permanently denied some permissions. Would you like to open app settings to allow them?")
+            Text("You've permanently denied notification permission. Would you like to open settings to allow it?")
         }
     )
 }
