@@ -29,6 +29,7 @@ import androidx.work.WorkManager
 import com.example.riskreminderapp.ui.theme.RiskReminderAppTheme
 import java.util.concurrent.TimeUnit
 
+
 class MainActivity : ComponentActivity() {
 
     private lateinit var permissionLauncher: ActivityResultLauncher<Array<String>>
@@ -81,6 +82,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             var showSettingsDialog by remember { mutableStateOf(false) }
             val context = LocalContext.current
+            val cameraGranted = remember { mutableStateOf(hasCameraPermission()) }
+            val micGranted = remember { mutableStateOf(hasMicPermission()) }
+            val locationGranted = remember { mutableStateOf(hasLocationPermission()) }
+
 
             LaunchedEffect(Unit) {
                 // Ask for Notification permission if not already granted
@@ -106,6 +111,9 @@ class MainActivity : ComponentActivity() {
 
                 schedulePasswordReminder()
                 scheduleSecurityTipsReminder()
+
+                // Start monitoring service based on available permissions
+                startFeatureMonitorService()
             }
 
             if (showSettingsDialog) {
@@ -122,24 +130,32 @@ class MainActivity : ComponentActivity() {
 
             RiskReminderAppTheme {
                 DashboardScreen(
-                    onRequestCameraMic = {
-                        checkAndRequestCameraAndMicPermissions {
+                    onRequestCamera = {
+                        checkAndRequestCameraPermission {
                             showSettingsDialog = true
+                            cameraGranted.value = hasCameraPermission()
+                        }
+                    },
+                    onRequestMic = {
+                        checkAndRequestMicPermission {
+                            showSettingsDialog = true
+                            micGranted.value = hasMicPermission()
                         }
                     },
                     onRequestLocation = {
                         checkAndRequestLocationPermissions {
                             showSettingsDialog = true
+                            locationGranted.value = hasLocationPermission()
                         }
                     },
                     onPasswordReminderClicked = {
-                        Toast.makeText(
-                            context,
-                            "Password reminders are automatically scheduled.",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+                        Toast.makeText(context, "Password reminders are automatically scheduled.", Toast.LENGTH_SHORT).show()
+                    },
+                    isCameraEnabled = cameraGranted.value,
+                    isMicEnabled = micGranted.value,
+                    isLocationEnabled = locationGranted.value
                 )
+
             }
         }
     }
@@ -160,14 +176,14 @@ class MainActivity : ComponentActivity() {
         WorkManager.getInstance(this).enqueue(tipRequest)
     }
 
-    private fun checkAndRequestCameraAndMicPermissions(onPermanentlyDenied: () -> Unit) {
-        val permissions = listOf(
-            Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO
-        )
-
-        handlePermissions(permissions, onPermanentlyDenied)
+    private fun checkAndRequestCameraPermission(onPermanentlyDenied: () -> Unit) {
+        handlePermissions(listOf(Manifest.permission.CAMERA), onPermanentlyDenied)
     }
+
+    private fun checkAndRequestMicPermission(onPermanentlyDenied: () -> Unit) {
+        handlePermissions(listOf(Manifest.permission.RECORD_AUDIO), onPermanentlyDenied)
+    }
+
 
     private fun checkAndRequestLocationPermissions(onPermanentlyDenied: () -> Unit) {
         val permissions = listOf(
@@ -197,14 +213,57 @@ class MainActivity : ComponentActivity() {
         intent.data = uri
         context.startActivity(intent)
     }
+
+    private fun startFeatureMonitorService() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (hasCameraPermission()) {
+                startForegroundService(Intent(this, CameraMonitorService::class.java))
+            }
+            if (hasMicPermission()) {
+                startForegroundService(Intent(this, MicMonitorService::class.java))
+            }
+            if (hasLocationPermission()) {
+                startForegroundService(Intent(this, LocationMonitorService::class.java))
+            }
+        } else {
+            if (hasCameraPermission()) {
+                startService(Intent(this, CameraMonitorService::class.java))
+            }
+            if (hasMicPermission()) {
+                startService(Intent(this, MicMonitorService::class.java))
+            }
+            if (hasLocationPermission()) {
+                startService(Intent(this, LocationMonitorService::class.java))
+            }
+        }
+    }
+
+
+    private fun hasCameraPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasMicPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasLocationPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    }
+
+
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
-    onRequestCameraMic: () -> Unit,
+    onRequestCamera: () -> Unit,
+    onRequestMic: () -> Unit,
     onRequestLocation: () -> Unit,
-    onPasswordReminderClicked: () -> Unit
+    onPasswordReminderClicked: () -> Unit,
+    isCameraEnabled: Boolean,
+    isMicEnabled: Boolean,
+    isLocationEnabled: Boolean
 ) {
     Scaffold(
         topBar = {
@@ -220,15 +279,32 @@ fun DashboardScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Stay secure with reminders", fontSize = 20.sp)
+            Text("Stay Secure!", fontSize = 40.sp)
 
-            Button(onClick = onRequestCameraMic) {
-                Text("Enable Camera & Mic Monitoring")
+            Button(onClick = onRequestCamera) {
+                Text("Enable Camera Monitoring")
             }
+            Text(
+                text = if (isCameraEnabled) "Camera Monitoring: Active" else "Camera Monitoring: Inactive",
+                fontSize = 14.sp
+            )
+
+            Button(onClick = onRequestMic) {
+                Text("Enable Microphone Monitoring")
+            }
+            Text(
+                text = if (isMicEnabled) "Mic Monitoring: Active" else "Mic Monitoring: Inactive",
+                fontSize = 14.sp
+            )
 
             Button(onClick = onRequestLocation) {
                 Text("Enable Location Monitoring")
             }
+            Text(
+                text = if (isLocationEnabled) "Location Monitoring: Active" else "Location Monitoring: Inactive",
+                fontSize = 14.sp
+            )
+
 
             Button(onClick = onPasswordReminderClicked) {
                 Text("Update Password Reminder")
@@ -265,6 +341,6 @@ fun AskSettingsDialog(
 @Composable
 fun DashboardPreview() {
     RiskReminderAppTheme {
-        DashboardScreen({}, {}, {})
+        DashboardScreen({}, {}, {}, {}, false, false, false)
     }
 }
