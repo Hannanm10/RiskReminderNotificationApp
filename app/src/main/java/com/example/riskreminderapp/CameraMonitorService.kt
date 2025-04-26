@@ -1,62 +1,166 @@
 package com.example.riskreminderapp
 
-import android.app.Notification
 import android.app.Service
+import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.IBinder
+import android.provider.Settings
+import android.util.Log
 import androidx.core.app.NotificationCompat
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraManager
+import android.app.usage.UsageStats
+import android.app.usage.UsageStatsManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.os.Build
+import android.app.AppOpsManager
+import android.os.Process
 
 class CameraMonitorService : Service() {
 
-    companion object {
-        const val CHANNEL_ID = "camera_monitor_channel"
+    private val cameraManager by lazy {
+        getSystemService(Context.CAMERA_SERVICE) as CameraManager
     }
+
+    private lateinit var availabilityCallback: CameraManager.AvailabilityCallback
+    private var lastUsedApp: String? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        // startForegroundServiceNotification()
+        setupCameraAvailabilityCallback()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Camera Monitor Active")
-            .setContentText("Monitoring camera usage...")
-            .setSmallIcon(R.drawable.baseline_camera_alt_24)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+    private fun setupCameraAvailabilityCallback() {
+        availabilityCallback = object : CameraManager.AvailabilityCallback() {
+            override fun onCameraAvailable(cameraId: String) {
+                super.onCameraAvailable(cameraId)
+                Log.d("CameraMonitor", "Camera $cameraId is now available.")
+                showCameraUsageNotification("Camera is not being used right now.")
+            }
 
-        startForeground(1, notification)
-        return START_STICKY
+            override fun onCameraUnavailable(cameraId: String) {
+                super.onCameraUnavailable(cameraId)
+                Log.d("CameraMonitor", "Camera $cameraId is now unavailable.")
+
+                if (hasUsageStatsPermission()) {
+                    val appName = getForegroundApp()
+                    if (appName != null) {
+                        showCameraUsageNotification("Camera is being used by: $appName")
+                    } else {
+                        showCameraUsageNotification("Camera is being used")
+                    }
+                } else {
+                    showCameraUsageNotification("Camera is being used")
+                }
+            }
+        }
+    }
+
+    private fun getForegroundApp(): String? {
+        val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val currentTime = System.currentTimeMillis()
+
+        val usageStatsList = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_DAILY,
+            currentTime - 8000,
+            currentTime
+        )
+
+        if (!usageStatsList.isNullOrEmpty()) {
+            val sortedStats = usageStatsList.sortedByDescending { it.lastTimeUsed }
+            return sortedStats.firstOrNull()?.packageName
+        }
+        return null
+    }
+
+    private fun showCameraUsageNotification(message: String) {
+        if (lastUsedApp != message) {
+            lastUsedApp = message
+
+            val notification = NotificationCompat.Builder(this, "cameraChannel")
+                .setContentTitle("Camera Monitoring Active (Swipe To Inactivate)")
+                .setContentText(message)
+                .setSmallIcon(android.R.drawable.ic_menu_camera)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .build()
+
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.notify(1, notification)
+        }
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Camera Monitoring",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
+                "cameraChannel",
+                "Camera Monitor",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Alerts when camera is being used"
+            }
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.createNotificationChannel(channel)
         }
+    }
+
+//    private fun startForegroundServiceNotification() {
+//        val notification = NotificationCompat.Builder(this, "cameraChannel")
+//            .setContentTitle("Camera Monitoring Active")
+//            .setContentText("Monitoring camera usage...")
+//            .setSmallIcon(android.R.drawable.ic_menu_camera)
+//            .setPriority(NotificationCompat.PRIORITY_LOW)
+//            .setAutoCancel(true)
+//            .build()
+//
+//        startForeground(1001, notification)
+//    }
+
+    private fun hasUsageStatsPermission(): Boolean {
+        val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        val mode = appOps.checkOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            packageName
+        )
+        return mode == AppOpsManager.MODE_ALLOWED
+    }
+
+    override fun onBind(intent: Intent?): IBinder? {
+        return null
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        try {
+            cameraManager.registerAvailabilityCallback(availabilityCallback, null)
+        } catch (e: CameraAccessException) {
+            e.printStackTrace()
+        }
+        return START_REDELIVER_INTENT
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        // TODO: Stop monitoring logic if needed
+        try {
+            cameraManager.unregisterAvailabilityCallback(availabilityCallback)
+        } catch (e: CameraAccessException) {
+            e.printStackTrace()
+        }
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        val restartServiceIntent = Intent(applicationContext, CameraMonitorService::class.java).also {
+            it.setPackage(packageName)
+        }
 
-//    private fun createNotification(content: String): Notification {
-//        return NotificationCompat.Builder(this, "monitoring_channel")
-//            .setContentTitle("Risk Reminder App")
-//            .setContentText(content)
-//            // .setSmallIcon(R.drawable.ic_security) // Replace with your icon
-//            .setOngoing(true)
-//            .build()
-//    }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            applicationContext.startForegroundService(restartServiceIntent)
+        } else {
+            applicationContext.startService(restartServiceIntent)
+        }
+    }
 }

@@ -35,6 +35,11 @@ class MainActivity : ComponentActivity() {
     private lateinit var permissionLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var notificationPermissionLauncher: ActivityResultLauncher<String>
 
+    private lateinit var cameraGranted: MutableState<Boolean>
+    private lateinit var micGranted: MutableState<Boolean>
+    private lateinit var locationGranted: MutableState<Boolean>
+    private lateinit var usageAccessGranted: MutableState<Boolean>
+
     private var onPermissionsDeniedPermanently: (() -> Unit)? = null
 
     private var isNotificationPermissionPermanentlyDenied = false
@@ -82,10 +87,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             var showSettingsDialog by remember { mutableStateOf(false) }
             val context = LocalContext.current
-            val cameraGranted = remember { mutableStateOf(hasCameraPermission()) }
-            val micGranted = remember { mutableStateOf(hasMicPermission()) }
-            val locationGranted = remember { mutableStateOf(hasLocationPermission()) }
-
+            cameraGranted = remember { mutableStateOf(hasCameraPermission()) }
+            micGranted = remember { mutableStateOf(hasMicPermission()) }
+            locationGranted = remember { mutableStateOf(hasLocationPermission()) }
+            var showUsageAccessDialog by remember { mutableStateOf(false) }
+            usageAccessGranted = remember { mutableStateOf(hasUsageStatsPermission()) }
 
             LaunchedEffect(Unit) {
                 // Ask for Notification permission if not already granted
@@ -114,6 +120,36 @@ class MainActivity : ComponentActivity() {
 
                 // Start monitoring service based on available permissions
                 startFeatureMonitorService()
+
+//                if (hasUsageStatsPermission()) {
+//                    val intent = Intent(context, AppUsageMonitorService::class.java)
+//                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+//                        startForegroundService(intent)
+//                    } else {
+//                        startService(intent)
+//                    }
+//                } else {
+//                    showUsageAccessDialog = true
+//                }
+
+            }
+
+            // Dynamic re-launching and stopping of services on permission change
+            LaunchedEffect(cameraGranted.value) {
+                if (cameraGranted.value) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(
+                            Intent(
+                                context,
+                                CameraMonitorService::class.java
+                            )
+                        )
+                    } else {
+                        startService(Intent(context, CameraMonitorService::class.java))
+                    }
+                } else {
+                    stopService(Intent(context, CameraMonitorService::class.java))
+                }
             }
 
             if (showSettingsDialog) {
@@ -128,6 +164,18 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
+            if (showUsageAccessDialog) {
+                AskUsageAccessDialog(
+                    onConfirm = {
+                        showUsageAccessDialog = false
+                        openUsageAccessSettings(this@MainActivity)
+                    },
+                    onDismiss = {
+                        showUsageAccessDialog = false
+                    }
+                )
+            }
+
             RiskReminderAppTheme {
                 DashboardScreen(
                     onRequestCamera = {
@@ -135,29 +183,63 @@ class MainActivity : ComponentActivity() {
                             showSettingsDialog = true
                             cameraGranted.value = hasCameraPermission()
                         }
+                        cameraGranted.value = hasCameraPermission()
                     },
                     onRequestMic = {
                         checkAndRequestMicPermission {
                             showSettingsDialog = true
                             micGranted.value = hasMicPermission()
                         }
+                        micGranted.value = hasMicPermission()
                     },
                     onRequestLocation = {
                         checkAndRequestLocationPermissions {
                             showSettingsDialog = true
                             locationGranted.value = hasLocationPermission()
                         }
+                        locationGranted.value = hasLocationPermission()
                     },
                     onPasswordReminderClicked = {
                         Toast.makeText(context, "Password reminders are automatically scheduled.", Toast.LENGTH_SHORT).show()
                     },
                     isCameraEnabled = cameraGranted.value,
                     isMicEnabled = micGranted.value,
-                    isLocationEnabled = locationGranted.value
+                    isLocationEnabled = locationGranted.value,
+                    isUsageAccessGranted = hasUsageStatsPermission(),
+                    onViewCameraApps = {
+                        if (cameraGranted.value) {
+                            startActivity(Intent(context, CameraPermissionAppsActivity::class.java))
+                        } else {
+                            Toast.makeText(context, "Camera permission not granted", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onViewMicApps = {
+                        if (micGranted.value) {
+                            startActivity(Intent(context, MicPermissionAppsActivity::class.java))
+                        } else {
+                            Toast.makeText(context, "Mic permission not granted", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onViewLocationApps = {
+                        if (locationGranted.value) {
+                            startActivity(Intent(context, LocationPermissionAppsActivity::class.java))
+                        } else {
+                            Toast.makeText(context, "Location permission not granted", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onRequestUsageAccess = {
+                        showUsageAccessDialog = true
+                        usageAccessGranted.value = hasUsageStatsPermission()
+                    }
                 )
-
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Refresh permission states
+        refreshPermissions()
     }
 
     private fun schedulePasswordReminder() {
@@ -183,7 +265,6 @@ class MainActivity : ComponentActivity() {
     private fun checkAndRequestMicPermission(onPermanentlyDenied: () -> Unit) {
         handlePermissions(listOf(Manifest.permission.RECORD_AUDIO), onPermanentlyDenied)
     }
-
 
     private fun checkAndRequestLocationPermissions(onPermanentlyDenied: () -> Unit) {
         val permissions = listOf(
@@ -219,25 +300,24 @@ class MainActivity : ComponentActivity() {
             if (hasCameraPermission()) {
                 startForegroundService(Intent(this, CameraMonitorService::class.java))
             }
-            if (hasMicPermission()) {
-                startForegroundService(Intent(this, MicMonitorService::class.java))
-            }
-            if (hasLocationPermission()) {
-                startForegroundService(Intent(this, LocationMonitorService::class.java))
-            }
+//            if (hasMicPermission()) {
+//                startForegroundService(Intent(this, MicMonitorService::class.java))
+//            }
+//            if (hasLocationPermission()) {
+//                startForegroundService(Intent(this, LocationMonitorService::class.java))
+//            }
         } else {
             if (hasCameraPermission()) {
                 startService(Intent(this, CameraMonitorService::class.java))
             }
-            if (hasMicPermission()) {
-                startService(Intent(this, MicMonitorService::class.java))
-            }
-            if (hasLocationPermission()) {
-                startService(Intent(this, LocationMonitorService::class.java))
-            }
+//            if (hasMicPermission()) {
+//                startService(Intent(this, MicMonitorService::class.java))
+//            }
+//            if (hasLocationPermission()) {
+//                startService(Intent(this, LocationMonitorService::class.java))
+//            }
         }
     }
-
 
     private fun hasCameraPermission(): Boolean {
         return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -251,7 +331,52 @@ class MainActivity : ComponentActivity() {
         return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
     }
 
+    private fun refreshPermissions() {
+        // Refresh permission states
+        val cameraNow = hasCameraPermission()
+        val micNow = hasMicPermission()
+        val locationNow = hasLocationPermission()
+        val usageAccessNow = hasUsageStatsPermission()
 
+        // Update the UI
+        if (this::cameraGranted.isInitialized) {
+            cameraGranted.value = cameraNow
+        }
+        if (this::micGranted.isInitialized) {
+            micGranted.value = micNow
+        }
+        if (this::locationGranted.isInitialized) {
+            locationGranted.value = locationNow
+        }
+        if (this::usageAccessGranted.isInitialized) {
+            usageAccessGranted.value = usageAccessNow
+        }
+    }
+
+    private fun hasUsageStatsPermission(): Boolean {
+        val appOps = getSystemService(APP_OPS_SERVICE) as android.app.AppOpsManager
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            appOps.unsafeCheckOpNoThrow(
+                android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                packageName
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            appOps.checkOpNoThrow(
+                android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                packageName
+            )
+        }
+        return mode == android.app.AppOpsManager.MODE_ALLOWED
+    }
+
+    private fun openUsageAccessSettings(context: android.content.Context) {
+        val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        context.startActivity(intent)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -263,7 +388,12 @@ fun DashboardScreen(
     onPasswordReminderClicked: () -> Unit,
     isCameraEnabled: Boolean,
     isMicEnabled: Boolean,
-    isLocationEnabled: Boolean
+    isLocationEnabled: Boolean,
+    isUsageAccessGranted: Boolean,
+    onViewCameraApps: () -> Unit,
+    onViewMicApps: () -> Unit,
+    onViewLocationApps: () -> Unit,
+    onRequestUsageAccess: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -281,33 +411,56 @@ fun DashboardScreen(
         ) {
             Text("Stay Secure!", fontSize = 40.sp)
 
-            Button(onClick = onRequestCamera) {
-                Text("Enable Camera Monitoring")
+            Button(
+                onClick = onRequestCamera,
+                enabled = !isCameraEnabled // Disable if already granted
+            ) {
+                Text(
+                    if (isCameraEnabled) "Camera Monitoring Enabled" else "Enable Camera Monitoring"
+                )
             }
-            Text(
-                text = if (isCameraEnabled) "Camera Monitoring: Active" else "Camera Monitoring: Inactive",
-                fontSize = 14.sp
-            )
 
-            Button(onClick = onRequestMic) {
-                Text("Enable Microphone Monitoring")
+            Button(
+                onClick = onRequestMic,
+                enabled = !isMicEnabled
+            ) {
+                Text(
+                    if (isMicEnabled) "Mic Monitoring Enabled" else "Enable Microphone Monitoring"
+                )
             }
-            Text(
-                text = if (isMicEnabled) "Mic Monitoring: Active" else "Mic Monitoring: Inactive",
-                fontSize = 14.sp
-            )
 
-            Button(onClick = onRequestLocation) {
-                Text("Enable Location Monitoring")
+            Button(
+                onClick = onRequestLocation,
+                enabled = !isLocationEnabled
+            ) {
+                Text(
+                    if (isLocationEnabled) "Location Monitoring Enabled" else "Enable Location Monitoring"
+                )
             }
-            Text(
-                text = if (isLocationEnabled) "Location Monitoring: Active" else "Location Monitoring: Inactive",
-                fontSize = 14.sp
-            )
 
+            Button(
+                onClick = onRequestUsageAccess,
+                enabled = !isUsageAccessGranted
+            ) {
+                Text(
+                    if (isUsageAccessGranted) "Usage Access Granted" else "Enable Usage Access Monitoring"
+                )
+            }
 
-            Button(onClick = onPasswordReminderClicked) {
-                Text("Update Password Reminder")
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Divider()
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Button(onClick = onViewCameraApps) {
+                Text("View Apps with Camera Access")
+            }
+            Button(onClick = onViewMicApps) {
+                Text("View Apps with Mic Access")
+            }
+            Button(onClick = onViewLocationApps) {
+                Text("View Apps with Location Access")
             }
         }
     }
@@ -332,15 +485,40 @@ fun AskSettingsDialog(
         },
         title = { Text("Permission Required") },
         text = {
-            Text("You've permanently denied notification permission. Would you like to open settings to allow it?")
+            Text("You've permanently denied some permission. Would you like to open settings to allow it?")
         }
     )
 }
+
+@Composable
+fun AskUsageAccessDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Open Settings")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        title = { Text("Usage Access Required") },
+        text = {
+            Text("This app needs permission to access your usage stats to check which app used camera. Would you like to enable it in settings?")
+        }
+    )
+}
+
 
 @Preview(showBackground = true)
 @Composable
 fun DashboardPreview() {
     RiskReminderAppTheme {
-        DashboardScreen({}, {}, {}, {}, false, false, false)
+        DashboardScreen({}, {}, {}, {}, false, false, false, false, {}, {}, {}, {})
     }
 }

@@ -33,7 +33,27 @@ class SecurityTipWorker(context: Context, workerParams: WorkerParameters) : Work
         "Avoid rooting your device, as it compromises system security.",
         "Encrypt your phone if it’s not encrypted by default.",
         "Log out of apps and services you no longer use.",
-        "Set app lock for sensitive apps like banking or email."
+        "Set app lock for sensitive apps like banking or email.",
+        "Use a password manager to generate and store complex passwords",
+        "Enable Google Play Protect to scan apps for malware",
+        "Review your Google account's security settings regularly",
+        "Set up a secure lock screen delay time (30 seconds to 1 minute)",
+        "Disable USB debugging when not needed for development",
+        "Use privacy-focused browsers with tracking protection",
+        "Check app data collection practices in Play Store privacy labels",
+        "Use secure messaging apps with end-to-end encryption",
+        "Enable biometric authentication for banking and payment apps",
+        "Regularly clear your browser cache and cookies",
+        "Set up Android's Guest User mode when sharing your device",
+        "Disable notification previews on your lock screen",
+        "Use a security app that scans for vulnerabilities",
+        "Regularly review app activity and usage in Android settings",
+        "Disable 'Smart Lock' features in high-risk environments",
+        "Use encrypted DNS services (like DNS over HTTPS)",
+        "Check for unauthorized device administrators in settings",
+        "Set up app-specific VPNs for sensitive applications",
+        "Disable automatic connection to open Wi-Fi networks",
+        "Periodically check which devices are logged into your accounts"
     )
 
     override fun doWork(): Result {
@@ -42,7 +62,7 @@ class SecurityTipWorker(context: Context, workerParams: WorkerParameters) : Work
         val randomTip = tips.random()
 
         val builder = NotificationCompat.Builder(applicationContext, "SECURITY_TIP_CHANNEL")
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.baseline_auto_awesome_24)
             .setContentTitle("Security Tip")
             .setContentText(randomTip)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
