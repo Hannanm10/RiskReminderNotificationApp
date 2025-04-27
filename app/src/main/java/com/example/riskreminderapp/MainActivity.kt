@@ -14,6 +14,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,7 +30,6 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.example.riskreminderapp.ui.theme.RiskReminderAppTheme
 import java.util.concurrent.TimeUnit
-
 
 class MainActivity : ComponentActivity() {
 
@@ -115,11 +116,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                schedulePasswordReminder()
-                scheduleSecurityTipsReminder()
 
-                // Start monitoring service based on available permissions
-                startFeatureMonitorService()
 
 //                if (hasUsageStatsPermission()) {
 //                    val intent = Intent(context, AppUsageMonitorService::class.java)
@@ -151,6 +148,14 @@ class MainActivity : ComponentActivity() {
                     stopService(Intent(context, CameraMonitorService::class.java))
                 }
             }
+
+            schedulePasswordReminder()
+            scheduleSecurityTipsReminder()
+            if (hasUsageStatsPermission()) {
+                scheduleDailyBatteryAlert()
+            }
+            // Start monitoring service based on available permissions
+            startFeatureMonitorService()
 
             if (showSettingsDialog) {
                 AskSettingsDialog(
@@ -199,13 +204,10 @@ class MainActivity : ComponentActivity() {
                         }
                         locationGranted.value = hasLocationPermission()
                     },
-                    onPasswordReminderClicked = {
-                        Toast.makeText(context, "Password reminders are automatically scheduled.", Toast.LENGTH_SHORT).show()
-                    },
                     isCameraEnabled = cameraGranted.value,
                     isMicEnabled = micGranted.value,
                     isLocationEnabled = locationGranted.value,
-                    isUsageAccessGranted = hasUsageStatsPermission(),
+                    isUsageAccessGranted = usageAccessGranted.value,
                     onViewCameraApps = {
                         if (cameraGranted.value) {
                             startActivity(Intent(context, CameraPermissionAppsActivity::class.java))
@@ -230,6 +232,20 @@ class MainActivity : ComponentActivity() {
                     onRequestUsageAccess = {
                         showUsageAccessDialog = true
                         usageAccessGranted.value = hasUsageStatsPermission()
+                    },
+                    onViewBatterySummary = {
+                        if (hasUsageStatsPermission()) {
+                            startActivity(Intent(context, BatterySummaryActivity::class.java))
+                        } else {
+                            Toast.makeText(context, "Usage stats permission not granted", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onViewRiskClassification = {
+                        if (hasUsageStatsPermission()) {
+                            startActivity(Intent(context, RiskClassificationActivity::class.java))
+                        } else {
+                            Toast.makeText(context, "Usage stats permission not granted", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 )
             }
@@ -256,6 +272,14 @@ class MainActivity : ComponentActivity() {
         ).build()
 
         WorkManager.getInstance(this).enqueue(tipRequest)
+    }
+
+    private fun scheduleDailyBatteryAlert() {
+        val workRequest = PeriodicWorkRequestBuilder<TopBatteryDrainerWorker>(
+            1, TimeUnit.DAYS
+        ).build()
+
+        WorkManager.getInstance(this).enqueue(workRequest)
     }
 
     private fun checkAndRequestCameraPermission(onPermanentlyDenied: () -> Unit) {
@@ -385,7 +409,6 @@ fun DashboardScreen(
     onRequestCamera: () -> Unit,
     onRequestMic: () -> Unit,
     onRequestLocation: () -> Unit,
-    onPasswordReminderClicked: () -> Unit,
     isCameraEnabled: Boolean,
     isMicEnabled: Boolean,
     isLocationEnabled: Boolean,
@@ -394,10 +417,12 @@ fun DashboardScreen(
     onViewMicApps: () -> Unit,
     onViewLocationApps: () -> Unit,
     onRequestUsageAccess: () -> Unit,
+    onViewBatterySummary: () -> Unit,
+    onViewRiskClassification: () -> Unit
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Risk Based Reminder App") })
+            TopAppBar(title = { Text("Risk Reminder Security App") })
         },
         modifier = Modifier.fillMaxSize()
     ) { paddingValues ->
@@ -405,46 +430,35 @@ fun DashboardScreen(
             modifier = Modifier
                 .padding(paddingValues)
                 .padding(16.dp)
-                .fillMaxSize(),
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("Stay Secure!", fontSize = 40.sp)
 
-            Button(
-                onClick = onRequestCamera,
-                enabled = !isCameraEnabled // Disable if already granted
-            ) {
-                Text(
-                    if (isCameraEnabled) "Camera Monitoring Enabled" else "Enable Camera Monitoring"
-                )
+            if (!isCameraEnabled) {
+                Button(onClick = onRequestCamera) {
+                    Text("Enable Camera Monitoring")
+                }
             }
 
-            Button(
-                onClick = onRequestMic,
-                enabled = !isMicEnabled
-            ) {
-                Text(
-                    if (isMicEnabled) "Mic Monitoring Enabled" else "Enable Microphone Monitoring"
-                )
+            if (!isMicEnabled) {
+                Button(onClick = onRequestMic) {
+                    Text("Enable Microphone Monitoring")
+                }
             }
 
-            Button(
-                onClick = onRequestLocation,
-                enabled = !isLocationEnabled
-            ) {
-                Text(
-                    if (isLocationEnabled) "Location Monitoring Enabled" else "Enable Location Monitoring"
-                )
+            if (!isLocationEnabled) {
+                Button(onClick = onRequestLocation) {
+                    Text("Enable Location Monitoring")
+                }
             }
 
-            Button(
-                onClick = onRequestUsageAccess,
-                enabled = !isUsageAccessGranted
-            ) {
-                Text(
-                    if (isUsageAccessGranted) "Usage Access Granted" else "Enable Usage Access Monitoring"
-                )
+            if (!isUsageAccessGranted) {
+                Button(onClick = onRequestUsageAccess) {
+                    Text("Enable Usage Access Monitoring")
+                }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -461,6 +475,12 @@ fun DashboardScreen(
             }
             Button(onClick = onViewLocationApps) {
                 Text("View Apps with Location Access")
+            }
+            Button(onClick = onViewBatterySummary) {
+                Text("View Battery Summary")
+            }
+            Button(onClick = onViewRiskClassification) {
+                Text("View Apps Risk Classification")
             }
         }
     }
@@ -509,7 +529,7 @@ fun AskUsageAccessDialog(
         },
         title = { Text("Usage Access Required") },
         text = {
-            Text("This app needs permission to access your usage stats to check which app used camera. Would you like to enable it in settings?")
+            Text("This app needs permission to access your usage stats for various features to work. Would you like to enable it in settings?")
         }
     )
 }
@@ -519,6 +539,6 @@ fun AskUsageAccessDialog(
 @Composable
 fun DashboardPreview() {
     RiskReminderAppTheme {
-        DashboardScreen({}, {}, {}, {}, false, false, false, false, {}, {}, {}, {})
+        DashboardScreen({}, {}, {}, false, false, false, false, {}, {}, {}, {}, {}, {})
     }
 }
