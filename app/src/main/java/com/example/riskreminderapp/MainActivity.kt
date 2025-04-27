@@ -26,9 +26,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.example.riskreminderapp.ui.theme.RiskReminderAppTheme
+import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
@@ -115,34 +117,17 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-
-
-
-//                if (hasUsageStatsPermission()) {
-//                    val intent = Intent(context, AppUsageMonitorService::class.java)
-//                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-//                        startForegroundService(intent)
-//                    } else {
-//                        startService(intent)
-//                    }
-//                } else {
-//                    showUsageAccessDialog = true
-//                }
-
             }
 
             // Dynamic re-launching and stopping of services on permission change
             LaunchedEffect(cameraGranted.value) {
+                delay(800)
                 if (cameraGranted.value) {
+                    val intent = Intent(context, CameraMonitorService::class.java)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        startForegroundService(
-                            Intent(
-                                context,
-                                CameraMonitorService::class.java
-                            )
-                        )
+                        startForegroundService(intent)
                     } else {
-                        startService(Intent(context, CameraMonitorService::class.java))
+                        startService(intent)
                     }
                 } else {
                     stopService(Intent(context, CameraMonitorService::class.java))
@@ -154,8 +139,6 @@ class MainActivity : ComponentActivity() {
             if (hasUsageStatsPermission()) {
                 scheduleDailyBatteryAlert()
             }
-            // Start monitoring service based on available permissions
-            startFeatureMonitorService()
 
             if (showSettingsDialog) {
                 AskSettingsDialog(
@@ -259,28 +242,32 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun schedulePasswordReminder() {
-        val workRequest = PeriodicWorkRequestBuilder<PasswordReminderWorker>(
-            7, TimeUnit.DAYS
-        ).build()
-
-        WorkManager.getInstance(this).enqueue(workRequest)
+        val workRequest = PeriodicWorkRequestBuilder<PasswordReminderWorker>(7, TimeUnit.DAYS).build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "PasswordReminderWork",
+            ExistingPeriodicWorkPolicy.KEEP,
+            workRequest
+        )
     }
 
     private fun scheduleSecurityTipsReminder() {
-        val tipRequest = PeriodicWorkRequestBuilder<SecurityTipWorker>(
-            12, TimeUnit.HOURS
-        ).build()
-
-        WorkManager.getInstance(this).enqueue(tipRequest)
+        val tipRequest = PeriodicWorkRequestBuilder<SecurityTipWorker>(12, TimeUnit.HOURS).build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "SecurityTipsWork",
+            ExistingPeriodicWorkPolicy.KEEP,
+            tipRequest
+        )
     }
 
     private fun scheduleDailyBatteryAlert() {
-        val workRequest = PeriodicWorkRequestBuilder<TopBatteryDrainerWorker>(
-            1, TimeUnit.DAYS
-        ).build()
-
-        WorkManager.getInstance(this).enqueue(workRequest)
+        val workRequest = PeriodicWorkRequestBuilder<TopBatteryDrainerWorker>(1, TimeUnit.DAYS).build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "DailyBatteryAlertWork",
+            ExistingPeriodicWorkPolicy.KEEP,
+            workRequest
+        )
     }
+
 
     private fun checkAndRequestCameraPermission(onPermanentlyDenied: () -> Unit) {
         handlePermissions(listOf(Manifest.permission.CAMERA), onPermanentlyDenied)
@@ -320,26 +307,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startFeatureMonitorService() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (hasCameraPermission()) {
-                startForegroundService(Intent(this, CameraMonitorService::class.java))
+        if (hasCameraPermission()) {
+            val intent = Intent(this, CameraMonitorService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
             }
-//            if (hasMicPermission()) {
-//                startForegroundService(Intent(this, MicMonitorService::class.java))
-//            }
-//            if (hasLocationPermission()) {
-//                startForegroundService(Intent(this, LocationMonitorService::class.java))
-//            }
-        } else {
-            if (hasCameraPermission()) {
-                startService(Intent(this, CameraMonitorService::class.java))
-            }
-//            if (hasMicPermission()) {
-//                startService(Intent(this, MicMonitorService::class.java))
-//            }
-//            if (hasLocationPermission()) {
-//                startService(Intent(this, LocationMonitorService::class.java))
-//            }
         }
     }
 
@@ -422,7 +396,9 @@ fun DashboardScreen(
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Risk Reminder Security App") })
+            TopAppBar(
+                title = { Text("Risk Reminder Security App") }
+            )
         },
         modifier = Modifier.fillMaxSize()
     ) { paddingValues ->
@@ -432,55 +408,123 @@ fun DashboardScreen(
                 .padding(16.dp)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Stay Secure!", fontSize = 40.sp)
+            Text(
+                "Stay Secure!",
+                fontSize = 32.sp,
+                style = MaterialTheme.typography.headlineMedium
+            )
 
-            if (!isCameraEnabled) {
-                Button(onClick = onRequestCamera) {
-                    Text("Enable Camera Monitoring")
+            HorizontalDivider()
+
+            // Monitoring Setup Section
+            if (!isMicEnabled || !isCameraEnabled || !isLocationEnabled || !isUsageAccessGranted) {
+                Card(
+                    elevation = CardDefaults.cardElevation(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text("Monitoring Setup", style = MaterialTheme.typography.titleMedium)
+
+                        if (!isCameraEnabled) {
+                            Button(
+                                onClick = onRequestCamera
+                            ) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Enable Camera Monitoring")
+                            }
+                        }
+
+                        if (!isMicEnabled) {
+                            Button(
+                                onClick = onRequestMic
+                            ) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Enable Microphone Monitoring")
+                            }
+                        }
+
+                        if (!isLocationEnabled) {
+                            Button(
+                                onClick = onRequestLocation
+                            ) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Enable Location Monitoring")
+                            }
+                        }
+
+                        if (!isUsageAccessGranted) {
+                            Button(
+                                onClick = onRequestUsageAccess
+                            ) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Enable Usage Access Monitoring")
+                            }
+                        }
+                    }
                 }
             }
 
-            if (!isMicEnabled) {
-                Button(onClick = onRequestMic) {
-                    Text("Enable Microphone Monitoring")
+            // Divider
+            HorizontalDivider()
+
+            // App Lists Section
+            Card(
+                elevation = CardDefaults.cardElevation(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text("App Permissions Overview", style = MaterialTheme.typography.titleMedium)
+
+                    OutlinedButton(onClick = onViewCameraApps, modifier = Modifier.fillMaxWidth()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("View Apps with Camera Access")
+                    }
+
+                    OutlinedButton(onClick = onViewMicApps, modifier = Modifier.fillMaxWidth()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("View Apps with Mic Access")
+                    }
+
+                    OutlinedButton(onClick = onViewLocationApps, modifier = Modifier.fillMaxWidth()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("View Apps with Location Access")
+                    }
                 }
             }
 
-            if (!isLocationEnabled) {
-                Button(onClick = onRequestLocation) {
-                    Text("Enable Location Monitoring")
+            // Divider
+            HorizontalDivider()
+
+            // Reports Section
+            Card(
+                elevation = CardDefaults.cardElevation(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text("Risk Classification Summaries", style = MaterialTheme.typography.titleMedium)
+
+                    OutlinedButton(onClick = onViewBatterySummary, modifier = Modifier.fillMaxWidth()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("View App Usage Summary")
+                    }
+
+                    OutlinedButton(onClick = onViewRiskClassification, modifier = Modifier.fillMaxWidth()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("View Apps Risk Classification")
+                    }
                 }
-            }
-
-            if (!isUsageAccessGranted) {
-                Button(onClick = onRequestUsageAccess) {
-                    Text("Enable Usage Access Monitoring")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Divider()
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Button(onClick = onViewCameraApps) {
-                Text("View Apps with Camera Access")
-            }
-            Button(onClick = onViewMicApps) {
-                Text("View Apps with Mic Access")
-            }
-            Button(onClick = onViewLocationApps) {
-                Text("View Apps with Location Access")
-            }
-            Button(onClick = onViewBatterySummary) {
-                Text("View Battery Summary")
-            }
-            Button(onClick = onViewRiskClassification) {
-                Text("View Apps Risk Classification")
             }
         }
     }

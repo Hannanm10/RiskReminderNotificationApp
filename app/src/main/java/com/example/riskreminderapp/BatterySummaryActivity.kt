@@ -1,6 +1,5 @@
 package com.example.riskreminderapp
 
-import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.graphics.drawable.Drawable
@@ -23,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
 import com.example.riskreminderapp.ui.theme.RiskReminderAppTheme
-import java.util.*
 
 class BatterySummaryActivity : ComponentActivity() {
 
@@ -50,23 +48,29 @@ class BatterySummaryActivity : ComponentActivity() {
         val endTime = System.currentTimeMillis()
         val startTime = endTime - 24 * 60 * 60 * 1000 // Last 24 hours
 
-        val usageStatsList =
-            usageStatsManager.queryUsageStats(
-                UsageStatsManager.INTERVAL_DAILY,
-                startTime,
-                endTime
-            )
+        val usageStatsList = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_DAILY,
+            startTime,
+            endTime
+        )
 
-        return usageStatsList
+        val aggregatedUsageStats = mutableMapOf<String, Long>()
+
+        usageStatsList
             .filter { it.totalTimeInForeground > 0 }
-            .sortedByDescending { it.totalTimeInForeground }
-            .map {
-                val appName = getAppName(it.packageName)
-                val timeUsedMillis = it.totalTimeInForeground
-                val formattedTime = formatDuration(timeUsedMillis)
-                val riskLevel = calculateRiskLevel(timeUsedMillis)
-                Triple(appName, formattedTime, riskLevel)
+            .forEach { stats ->
+                val packageName = stats.packageName
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    aggregatedUsageStats[packageName] = aggregatedUsageStats.getOrDefault(packageName, 0L) + stats.totalTimeInForeground
+                }
             }
+
+        return aggregatedUsageStats.map { (packageName, totalTimeInForeground) ->
+            val appName = getAppName(packageName)
+            val formattedTime = formatDuration(totalTimeInForeground)
+            val riskLevel = calculateRiskLevel(totalTimeInForeground)
+            Triple(appName, formattedTime, riskLevel)
+        }.sortedByDescending { it.second }
     }
 
     private fun calculateRiskLevel(timeMillis: Long): String {

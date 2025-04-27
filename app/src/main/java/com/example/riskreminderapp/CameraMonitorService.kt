@@ -5,12 +5,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
-import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraManager
-import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -29,7 +27,7 @@ class CameraMonitorService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        // startForegroundServiceNotification()
+        startForegroundServiceNotification()
         setupCameraAvailabilityCallback()
     }
 
@@ -81,7 +79,7 @@ class CameraMonitorService : Service() {
             lastUsedApp = message
 
             val notification = NotificationCompat.Builder(this, "cameraChannel")
-                .setContentTitle("Camera Monitoring Active (Swipe To Inactivate)")
+                .setContentTitle("Camera Monitoring Active")
                 .setContentText(message)
                 .setSmallIcon(android.R.drawable.ic_menu_camera)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -107,25 +105,34 @@ class CameraMonitorService : Service() {
         }
     }
 
-//    private fun startForegroundServiceNotification() {
-//        val notification = NotificationCompat.Builder(this, "cameraChannel")
-//            .setContentTitle("Camera Monitoring Active")
-//            .setContentText("Monitoring camera usage...")
-//            .setSmallIcon(android.R.drawable.ic_menu_camera)
-//            .setPriority(NotificationCompat.PRIORITY_LOW)
-//            .setAutoCancel(true)
-//            .build()
-//
-//        startForeground(1001, notification)
-//    }
+    private fun startForegroundServiceNotification() {
+        val notification = NotificationCompat.Builder(this, "cameraChannel")
+            .setContentTitle("Camera Monitor Active")
+            .setContentText("Monitoring camera usage...")
+            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        startForeground(1, notification)
+    }
+
 
     private fun hasUsageStatsPermission(): Boolean {
-        val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        val mode = appOps.checkOpNoThrow(
-            AppOpsManager.OPSTR_GET_USAGE_STATS,
-            Process.myUid(),
-            packageName
-        )
+        val appOps = getSystemService(APP_OPS_SERVICE) as AppOpsManager
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            appOps.unsafeCheckOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                Process.myUid(),
+                packageName
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            appOps.checkOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                Process.myUid(),
+                packageName
+            )
+        }
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
@@ -139,7 +146,7 @@ class CameraMonitorService : Service() {
         } catch (e: CameraAccessException) {
             e.printStackTrace()
         }
-        return START_REDELIVER_INTENT
+        return START_STICKY
     }
 
     override fun onDestroy() {
@@ -148,19 +155,6 @@ class CameraMonitorService : Service() {
             cameraManager.unregisterAvailabilityCallback(availabilityCallback)
         } catch (e: CameraAccessException) {
             e.printStackTrace()
-        }
-    }
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        super.onTaskRemoved(rootIntent)
-        val restartServiceIntent = Intent(applicationContext, CameraMonitorService::class.java).also {
-            it.setPackage(packageName)
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            applicationContext.startForegroundService(restartServiceIntent)
-        } else {
-            applicationContext.startService(restartServiceIntent)
         }
     }
 }

@@ -19,7 +19,7 @@ class TopBatteryDrainerWorker(
             applicationContext.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
         val endTime = System.currentTimeMillis()
-        val startTime = endTime - 24 * 60 * 60 * 1000 // Last 24 hours
+        val startTime = endTime - 12 * 60 * 60 * 1000 // Last 12 hours
 
         val usageStatsList = usageStatsManager.queryUsageStats(
             UsageStatsManager.INTERVAL_DAILY,
@@ -75,7 +75,7 @@ class TopBatteryDrainerWorker(
         val notification = NotificationCompat.Builder(applicationContext, channelId)
             .setContentTitle("⚡ High Usage Detected")
             .setContentText("$appName used for $usageTime today")
-            .setSmallIcon(R.drawable.baseline_battery_alert_24) // Replace with your app's icon
+            .setSmallIcon(R.drawable.baseline_battery_alert_24)
             .build()
 
         notificationManager.notify(2024, notification)

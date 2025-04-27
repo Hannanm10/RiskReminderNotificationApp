@@ -1,6 +1,7 @@
 package com.example.riskreminderapp
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -35,7 +36,8 @@ class LocationPermissionAppsActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun LocationPermissionAppsScreen() {
-        val appsWithLocationPermission = remember { getLaunchableAppsWithPermission() }
+        val context = LocalContext.current
+        val appsWithLocationPermission = remember { getLaunchableAppsWithPermission(context) }
 
         Scaffold(
             topBar = {
@@ -119,8 +121,8 @@ class LocationPermissionAppsActivity : ComponentActivity() {
         }
     }
 
-    private fun getLaunchableAppsWithPermission(): List<ApplicationInfo> {
-        val packageManager = packageManager
+    private fun getLaunchableAppsWithPermission(context: Context): List<ApplicationInfo> {
+        val packageManager = context.packageManager
         val launchableApps = getLaunchableApps()
 
         return launchableApps.filter { app ->
