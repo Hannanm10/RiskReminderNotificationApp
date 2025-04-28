@@ -436,8 +436,10 @@ fun DashboardScreen(
                                 onClick = onRequestCamera
                             ) {
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Enable Camera Monitoring")
+                                Text("Enable Camera Permission")
                             }
+                        } else {
+                            Text("Camera Permission Allowed.")
                         }
 
                         if (!isMicEnabled) {
@@ -445,8 +447,10 @@ fun DashboardScreen(
                                 onClick = onRequestMic
                             ) {
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Enable Microphone Monitoring")
+                                Text("Enable Microphone Permission")
                             }
+                        } else {
+                            Text("Mic Permission Aloowed.")
                         }
 
                         if (!isLocationEnabled) {
@@ -454,8 +458,10 @@ fun DashboardScreen(
                                 onClick = onRequestLocation
                             ) {
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Enable Location Monitoring")
+                                Text("Enable Location Permission")
                             }
+                        } else {
+                            Text("Location Permission Allowed.")
                         }
 
                         if (!isUsageAccessGranted) {
@@ -463,8 +469,10 @@ fun DashboardScreen(
                                 onClick = onRequestUsageAccess
                             ) {
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Enable Usage Access Monitoring")
+                                Text("Enable Usage Access Permission")
                             }
+                        } else{
+                            Text("Usage Access Allowed.")
                         }
                     }
                 }
