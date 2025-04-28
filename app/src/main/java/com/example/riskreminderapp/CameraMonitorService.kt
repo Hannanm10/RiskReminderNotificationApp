@@ -35,13 +35,11 @@ class CameraMonitorService : Service() {
         availabilityCallback = object : CameraManager.AvailabilityCallback() {
             override fun onCameraAvailable(cameraId: String) {
                 super.onCameraAvailable(cameraId)
-                Log.d("CameraMonitor", "Camera $cameraId is now available.")
                 showCameraUsageNotification("Camera is not being used right now.")
             }
 
             override fun onCameraUnavailable(cameraId: String) {
                 super.onCameraUnavailable(cameraId)
-                Log.d("CameraMonitor", "Camera $cameraId is now unavailable.")
 
                 if (hasUsageStatsPermission()) {
                     val appName = getForegroundApp()
